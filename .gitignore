@@ -1,0 +1,25 @@
+# Python
+Server/venv/
+Server/.pytest_cache/
+Server/__pycache__/
+Server/*.json
+Server/uploads/
+Server/reports/
+Server/.env
+
+# Node
+Client/node_modules/
+Client/.env
+Client/dist/
+Client/.temp/
+Client/*.png
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
