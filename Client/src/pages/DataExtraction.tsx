@@ -216,7 +216,7 @@ const DataExtraction = () => {
                     </TableCell>
                     <TableCell className="text-right">
                       <Button 
-                        variant="soft" 
+                        variant="secondary" 
                         size="sm" 
                         className="gap-2"
                         disabled={doc.status !== 'Extracted'}

@@ -37,17 +37,18 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_OUTPUT = 1000  # Reduced to avoid Groq TPM limits
 
 def _truncate(text: str, max_len: Optional[int] = None) -> str:
-    limit = max_len or MAX_TOOL_OUTPUT
-    if not isinstance(text, str):
-        text = str(text)
-    return text[:limit] + "\n...[truncated]" if len(text) > limit else text
+    limit = int(max_len or MAX_TOOL_OUTPUT)
+    safe_text = str(text) if text is not None else ""
+    if len(safe_text) > limit:
+        return safe_text[:limit] + "\n...[truncated]"
+    return safe_text
 
 
 # ============================================================
 # Tools with Indian data source prompts embedded
 # ============================================================
 
-def _create_tools(company_name: str, promoter_names: List[str] = None, sector: str = None):
+def _create_tools(company_name: str, promoter_names: Optional[List[str]] = None, sector: Optional[str] = None):
     """Create all 9 tools with deep Indian data source prompts baked in."""
     from langchain_core.tools import tool
     from tavily import TavilyClient
@@ -77,13 +78,13 @@ def _create_tools(company_name: str, promoter_names: List[str] = None, sector: s
             ]
             output = ""
             for q in queries:
-                r = tavily_client.search(query=q, search_depth="advanced", max_results=2, include_answer=True)
+                r = tavily_client.search(query=q, search_depth="advanced", max_results=5, include_answer=True)
                 output += f"Summary: {r.get('answer', 'N/A')}\n"
-                for s in r.get("results", [])[:2]:
-                    output += f"- {s['title']}: {s['content'][:150]}\n"
+                for s in r.get("results", [])[:5]:
+                    output += f"- {s['title']}: {s['content'][:300]}\n"
             doc_results = _search_docs(f"{company_name} business profile operations")
             output += f"\nDOCS:\n{doc_results}"
-            return _truncate(output)
+            return _truncate(output, 3000)
         except Exception as e:
             return f"Company investigation failed: {e}"
 
@@ -110,12 +111,12 @@ def _create_tools(company_name: str, promoter_names: List[str] = None, sector: s
             output = f"DOCS:\n{doc_results}\n"
             for q in queries:
                 web = tavily_client.search(
-                    query=q, search_depth="advanced", max_results=2, include_answer=True,
+                    query=q, search_depth="advanced", max_results=5, include_answer=True,
                 )
                 output += f"WEB: {web.get('answer', 'N/A')}\n"
-                for s in web.get("results", [])[:2]:
-                    output += f"- {s['title']}: {s['content'][:200]}\n"
-            return _truncate(output)
+                for s in web.get("results", [])[:5]:
+                    output += f"- {s['title']}: {s['content'][:400]}\n"
+            return _truncate(output, 4000)
         except Exception as e:
             return f"Financial investigation failed: {e}"
 
@@ -259,17 +260,20 @@ def _create_tools(company_name: str, promoter_names: List[str] = None, sector: s
         Input: query about promoters or directors."""
         try:
             output = ""
-            for name in (promoters if promoters else [company_name + " promoter director"]):
+            for name in (promoters if promoters else [f"{company_name} promoter director"]):
                 queries = [
                     f'"{name}" {query} director companies history Zauba Corp India',
                     f'"{name}" fraud investigation court case legal issues India',
                 ]
                 for q in queries:
                     r = tavily_client.search(query=q, search_depth="basic", max_results=2, include_answer=True)
-                    output += f"Summary: {r.get('answer', 'N/A')}\n"
+                    ans = str(r.get('answer', 'N/A'))
+                    output = str(output) + f"Summary: {ans}\n"
                     for s in r.get("results", [])[:2]:
-                        output += f"- {s['title']}: {s['content'][:150]}\n"
-            return _truncate(output)
+                        title = str(s.get('title', 'N/A'))
+                        content = str(s.get('content', ''))[:150]
+                        output = str(output) + f"- {title}: {content}\n"
+            return _truncate(str(output))
         except Exception as e:
             return f"Promoter investigation failed: {e}"
 
@@ -337,21 +341,25 @@ def _create_tools(company_name: str, promoter_names: List[str] = None, sector: s
 
 
 def _search_docs(query: str) -> str:
-    """Helper: search vector DB for document chunks."""
+    """Helper: search vector DB for document chunks with increased context."""
     try:
         from vector_store.chroma_store import query_documents
+        # Increased n_results to 12 to get more comprehensive data
         results = query_documents(
-            query_text=query, n_results=5,
+            query_text=query, n_results=12,
             collection_name=CHROMA_COLLECTION_NAME, persist_dir=CHROMA_DB_DIR,
         )
         if not results.get("results"):
             return "No relevant documents found."
         output = ""
-        for i, r in enumerate(results["results"][:3], 1):
+        # Return more snippets (up to 8) with more text (500 chars)
+        for i, r in enumerate(results["results"][:8], 1):
             doc_type = r["metadata"].get("document_type", "N/A")
             file_name = r["metadata"].get("file_name", "N/A")
-            output += f"[{i}] {file_name} ({doc_type}): {r['text'][:200]}\n"
-        return _truncate(output)
+            # Increased snippet length to 500 for better context
+            snippet = r["text"][:500].replace('\n', ' ')
+            output += f"[{i}] {file_name} ({doc_type}): {snippet}...\n"
+        return _truncate(output, max_len=4000) # Increased truncation limit for better data flow
     except Exception as e:
         return f"Document search error: {e}"
 
@@ -360,7 +368,7 @@ def _search_docs(query: str) -> str:
 # LangGraph ReAct Agent with all prompts embedded
 # ============================================================
 
-def create_research_agent(company_name: str, promoter_names: List[str] = None, sector: str = None):
+def create_research_agent(company_name: str, promoter_names: List[str] = None, sector: str = None, structured_data: str = ""):
     """Create the LangGraph ReAct Research Agent."""
     from langgraph.prebuilt import create_react_agent
     from langchain_core.messages import SystemMessage
@@ -377,6 +385,11 @@ def create_research_agent(company_name: str, promoter_names: List[str] = None, s
 COMPANY: {company_name}
 {promoter_text}
 {sector_text}
+
+EXISTING STRUCTURED FINANCIAL DATA (from uploaded docs):
+\"\"\"
+{structured_data if structured_data else "No structured metrics available yet. Use search_document_knowledge to find details."}
+\"\"\"
 
 You behave like a senior credit analyst at an Indian bank evaluating a loan application.
 You MUST extract SPECIFIC NUMBERS, not vague summaries. You investigate using:
@@ -586,9 +599,10 @@ def run_research_with_human_loop(
     company_name: str,
     promoter_names: List[str] = None,
     sector: str = None,
+    structured_data: str = ""
 ):
     """Run the Research Agent with human-in-the-loop."""
-    agent = create_research_agent(company_name, promoter_names, sector)
+    agent = create_research_agent(company_name, promoter_names, sector, structured_data)
 
     initial_query = (
         f"Perform a comprehensive credit investigation on '{company_name}'. "
@@ -743,14 +757,15 @@ def _store_research_in_vectordb(company_name: str, research_iterations: List[Dic
 def run_automated_research(
     company_name: str,
     promoter_names: List[str] = None,
-    sector: str = None
+    sector: str = None,
+    structured_data: str = ""
 ):
     """Run the Research Agent in automated mode (no human loop) for API use.
     
     This runs one iteration and returns results without human interaction.
     All existing functionality remains unchanged.
     """
-    agent = create_research_agent(company_name, promoter_names, sector)
+    agent = create_research_agent(company_name, promoter_names, sector, structured_data)
 
     initial_query = (
         f"Perform a comprehensive credit investigation on '{company_name}'. "

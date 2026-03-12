@@ -5,13 +5,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Upload, Save, Camera, Building2, Loader2 } from "lucide-react";
+import { Upload, Save, Camera, Building2, Loader2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useWorkflow } from "@/contexts/WorkflowContext";
 import { companyService, Company } from "@/services/companyService";
 import { caseService } from "@/services/caseService";
 import { CreditCase } from "@/types/creditCase";
 import { dueDiligenceService } from "@/services/dueDiligenceService";
+
+// Better to define API_URL here or import it if exported
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 const DueDiligence = () => {
   const { state, setSelectedCompanyId, setSelectedCaseId } = useWorkflow();
@@ -26,6 +29,8 @@ const DueDiligence = () => {
   const [credibility, setCredibility] = useState<"Excellent" | "Good" | "Average" | "Poor">("Average");
   const [factoryNotes, setFactoryNotes] = useState("");
   const [riskNotes, setRiskNotes] = useState("");
+  const [sitePhotos, setSitePhotos] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   const selectedCompanyId = state.selectedCompanyId || "";
   const selectedCaseId = state.selectedCaseId || "";
@@ -80,6 +85,7 @@ const DueDiligence = () => {
         setCredibility(data.managementCredibility);
         setFactoryNotes(data.visitNotes);
         setRiskNotes(data.operationalRisks);
+        setSitePhotos(data.sitePhotos || []);
       } else {
         resetForm();
       }
@@ -95,6 +101,41 @@ const DueDiligence = () => {
     setCredibility("Average");
     setFactoryNotes("");
     setRiskNotes("");
+    setSitePhotos([]);
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return;
+    
+    setUploading(true);
+    const files = Array.from(e.target.files);
+    const newPhotos: string[] = [];
+    
+    try {
+      for (const file of files) {
+        const url = await dueDiligenceService.uploadPhoto(file);
+        newPhotos.push(url);
+      }
+      setSitePhotos(prev => [...prev, ...newPhotos]);
+      toast({
+        title: "Photos Uploaded",
+        description: `Successfully uploaded ${newPhotos.length} photos.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Upload Failed",
+        description: "Could not upload some photos.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+      // Reset input
+      e.target.value = "";
+    }
+  };
+
+  const removePhoto = (index: number) => {
+    setSitePhotos(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSave = async () => {
@@ -115,6 +156,7 @@ const DueDiligence = () => {
         managementCredibility: credibility,
         operationalRisks: riskNotes,
         visitNotes: factoryNotes,
+        sitePhotos: sitePhotos,
       });
       toast({
         title: "Success",
@@ -221,13 +263,57 @@ const DueDiligence = () => {
             </CardContent>
           </Card>
 
-          <Card className="shadow-card">
-            <CardHeader><CardTitle>Site Photos</CardTitle></CardHeader>
-            <CardContent>
-              <div className="border-2 border-dashed rounded-xl p-8 text-center bg-muted/20">
+          <Card className="shadow-card overflow-hidden">
+            <CardHeader className="bg-muted/50 pb-3">
+              <CardTitle className="text-md flex items-center gap-2">
+                <Camera className="h-4 w-4 text-primary" />
+                Site Photos
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6">
+              {sitePhotos.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-6">
+                  {sitePhotos.map((url, idx) => (
+                    <div key={idx} className="group relative aspect-square rounded-lg overflow-hidden border bg-slate-50">
+                      <img 
+                        src={url.startsWith('http') ? url : `${API_URL}${url}`} 
+                        alt={`Site ${idx}`} 
+                        className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                      />
+                      <button 
+                        onClick={() => removePhoto(idx)}
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="border-2 border-dashed rounded-xl p-8 text-center bg-muted/20 hover:bg-muted/30 transition-colors">
+                <input 
+                  type="file" 
+                  id="site-photo-upload" 
+                  multiple 
+                  accept="image/*" 
+                  className="hidden" 
+                  onChange={handlePhotoUpload}
+                  disabled={uploading}
+                />
                 <Camera className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                <p className="text-sm text-muted-foreground mb-3">Upload factory/site inspection photos</p>
-                <Button variant="outline"><Upload className="mr-2 h-4 w-4" /> Upload Photos</Button>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {uploading ? "Uploading files..." : "Upload factory/site inspection photos"}
+                </p>
+                <Button 
+                  variant="outline" 
+                  onClick={() => document.getElementById('site-photo-upload')?.click()}
+                  disabled={uploading}
+                >
+                  {uploading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Upload className="mr-2 h-4 w-4" />}
+                  {uploading ? "Processing..." : "Select Photos"}
+                </Button>
+                <p className="text-[10px] text-slate-500 mt-4">JPG, PNG supported. Multiple files allowed.</p>
               </div>
             </CardContent>
           </Card>

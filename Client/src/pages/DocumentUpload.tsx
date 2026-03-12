@@ -428,7 +428,7 @@ const DocumentUpload = ({ caseId: propCaseId }: DocumentUploadProps) => {
                   type="file"
                   id="file-upload"
                   multiple
-                  accept=".pdf,.xlsx,.xls,.csv,.json"
+                  accept=".pdf,.xlsx,.xls,.csv,.json,.png,.jpg,.jpeg"
                   className="hidden"
                   onChange={handleFileSelect}
                   disabled={uploading}

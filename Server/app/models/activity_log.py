@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
 class ActivityLog(BaseModel):
@@ -8,7 +8,7 @@ class ActivityLog(BaseModel):
     category: str  # e.g., "CASE", "DOCUMENT", "RESEARCH", "RISK", "RECOMMENDATION", "CAM"
     user: str = "System"
     details: Optional[Dict[str, Any]] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 def create_activity_log(
     db_collection,
@@ -24,7 +24,7 @@ def create_activity_log(
         "category": category,
         "user": user,
         "details": details,
-        "timestamp": datetime.utcnow()
+        "timestamp": datetime.now(timezone.utc)
     }
     try:
         db_collection.insert_one(log_entry)

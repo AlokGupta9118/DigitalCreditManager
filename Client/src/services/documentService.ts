@@ -89,5 +89,12 @@ export const documentService = {
   async getDocumentStats(creditCaseId: string) {
     const response = await axios.get(`${API_BASE_URL}/documents/stats/${creditCaseId}`);
     return response.data;
+  },
+
+  async searchDocuments(query: string): Promise<Document[]> {
+    const response = await axios.get(`${API_BASE_URL}/documents/search`, {
+      params: { query }
+    });
+    return response.data;
   }
 };

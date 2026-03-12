@@ -35,11 +35,13 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Ensure reports directory exists
+# Ensure reports and uploads directories exist
 os.makedirs("reports", exist_ok=True)
+os.makedirs("uploads", exist_ok=True)
 
-# Serve generated reports
+# Serve generated reports and uploads
 app.mount("/reports", StaticFiles(directory="reports"), name="reports")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Include all routers
 app.include_router(users.router)

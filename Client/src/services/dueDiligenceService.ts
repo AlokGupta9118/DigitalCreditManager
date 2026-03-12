@@ -1,4 +1,4 @@
-import { apiClient } from "../utils/api";
+import { apiClient, uploadFile } from "../utils/api";
 
 export interface DueDiligenceData {
   creditCaseId: string;
@@ -6,6 +6,7 @@ export interface DueDiligenceData {
   managementCredibility: "Excellent" | "Good" | "Average" | "Poor";
   operationalRisks: string;
   visitNotes: string;
+  sitePhotos?: string[];
 }
 
 export const dueDiligenceService = {
@@ -23,4 +24,23 @@ export const dueDiligenceService = {
       return null;
     }
   },
+
+  async uploadPhoto(file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append("file", file);
+    const result = await uploadFile<{ status: string, url: string }>("/due-diligence/upload-photo", formData);
+    return result.url;
+  },
+
+  async analyzeDueDiligence(notes: string, file: File | null): Promise<DueDiligenceData> {
+    const formData = new FormData();
+    formData.append("notes", notes);
+    if (file) {
+      formData.append("file", file);
+    }
+    
+    const result = await uploadFile<{ status: string, data: DueDiligenceData }>("/due-diligence/analyze", formData);
+    return result.data;
+  },
 };
+

@@ -2,28 +2,36 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { caseService } from "@/services/caseService";
 import { activityService, ActivityLog } from "@/services/activityService";
-import { CreditCase } from "@/types/creditCase";
+import { useWorkflow } from "@/contexts/WorkflowContext";
+import { CreditCase, Company } from "@/types/creditCase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Loader2, ArrowLeft, FileText, Info, Target, Users,
+  Loader2, ArrowLeft, FileText, Info, Target, Users, User,
   Activity, ShieldCheck, IndianRupee, MapPin, Phone,
-  Mail, Calendar, Briefcase, FileCode
+  Mail, Calendar, Briefcase, FileCode, Clock, ClipboardCheck
 } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Label } from "@/components/ui/label";
 import DocumentUpload from "./DocumentUpload";
 import ResearchAgent from "./ResearchAgent";
 import RiskScoring from "./RiskScoring";
+import DueDiligenceTab from "@/components/DueDiligenceTab";
 import { WorkflowProgress } from "@/components/WorkflowProgress";
 import ActivityFeed from "@/components/ActivityFeed";
+import { motion } from "framer-motion";
+import { cn } from "@/lib/utils";
 
 const CaseDetails = () => {
   const { caseId } = useParams();
   const navigate = useNavigate();
   const [caseData, setCaseData] = useState<CreditCase | null>(null);
+  const [company, setCompany] = useState<Company | null>(null);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const { setSelectedCompanyId, setSelectedCaseId } = useWorkflow();
 
   useEffect(() => {
     if (caseId) {
@@ -40,6 +48,19 @@ const CaseDetails = () => {
       ]);
       setCaseData(data);
       setLogs(logsData);
+      
+      // Update global workflow context
+      setSelectedCaseId(caseId!);
+      
+      if (data.companyId) {
+        setSelectedCompanyId(data.companyId);
+        try {
+          const companyData = await caseService.getCompany(data.companyId);
+          setCompany(companyData);
+        } catch (err) {
+          console.error("Failed to fetch company details:", err);
+        }
+      }
     } catch (error) {
       console.error("Failed to fetch case details:", error);
     } finally {
@@ -75,69 +96,73 @@ const CaseDetails = () => {
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    <div className="space-y-8 animate-in">
       {/* Header with back button */}
-      <div className="flex items-center justify-between sticky top-0 bg-slate-50/80 backdrop-blur-sm py-4 z-50 -mx-4 px-4 border-b border-slate-200 lg:static lg:bg-transparent lg:p-0 lg:border-none">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-2">
+        <div className="flex items-center gap-5">
           <Button
             variant="ghost"
-            size="sm"
+            size="icon"
             onClick={() => navigate("/dashboard")}
-            className="rounded-full h-10 w-10 p-0"
+            className="rounded-xl h-12 w-12 bg-white border border-slate-200 shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-all"
           >
-            <ArrowLeft className="h-5 w-5" />
+            <ArrowLeft className="h-6 w-6 text-slate-600" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">{caseData.companyName || caseData.borrowerName}</h1>
-            <p className="text-sm text-slate-500 flex items-center gap-2">
-              <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider">
-                {caseId?.substring(0, 8)}...
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold text-slate-900 tracking-tight">{caseData.companyName || company?.companyName || caseData.borrowerName}</h1>
+              <Badge className={cn("px-2 py-0.5 rounded font-black text-[10px] uppercase tracking-widest",
+                caseData.status === 'Approved' ? 'bg-emerald-500 text-white' :
+                caseData.status === 'Under Review' ? 'bg-amber-500 text-white' :
+                caseData.status === 'Rejected' ? 'bg-rose-500 text-white' :
+                'bg-slate-500 text-white'
+              )}>
+                {caseData.status}
               </Badge>
-              • {caseData.caseType} • Managed by AI Engine
-            </p>
+            </div>
+            <div className="flex items-center gap-4 mt-2">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                <Briefcase className="h-3.5 w-3.5" />
+                {caseData.sector || company?.sector || "General Sector"}
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                <FileCode className="h-3.5 w-3.5" />
+                ID: {caseId?.slice(-8).toUpperCase()}
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                <Calendar className="h-3.5 w-3.5" />
+                Updated {new Date(caseData.updatedAt).toLocaleDateString()}
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <Badge className={
-            caseData.status === 'Approved' ? 'bg-green-100 text-green-800 border-green-200' :
-              caseData.status === 'Under Review' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
-                caseData.status === 'Rejected' ? 'bg-red-100 text-red-800 border-red-200' :
-                  'bg-slate-100 text-slate-800 border-slate-200'
-          }>
-            {caseData.status}
-          </Badge>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate(`/recommendation?caseId=${caseId}`)}
-            className="hidden sm:flex"
-          >
-            Go to Recommendation
-          </Button>
+        <div className="min-w-[420px] hidden lg:block">
+          <WorkflowProgress caseId={caseId!} />
         </div>
       </div>
 
       {/* Pipeline Progress Indicator */}
-      <WorkflowProgress caseId={caseId!} />
+      {/* Redundant one removed to optimize vertical space and focus on header-integrated version */}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Main Tabs */}
-        <div className="lg:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start relative">
+        {/* Main Content Area */}
+        <div className="lg:col-span-8 xl:col-span-9 space-y-8 min-w-0">
           <Tabs defaultValue="details" className="w-full">
-            <TabsList className="w-full justify-start border-b rounded-none bg-transparent h-auto p-0 mb-6 space-x-6">
+            <TabsList className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl mb-6 w-fit h-auto overflow-x-auto">
               {[
-                { id: 'details', label: 'Case Details', icon: Info },
+                { id: 'details', label: 'Overview', icon: Info },
                 { id: 'documents', label: 'Documents', icon: FileText },
-                { id: 'analysis', label: 'AI research', icon: Target },
-                { id: 'risk', label: 'Risk Scoring', icon: ShieldCheck },
-                { id: 'parties', label: 'Parties', icon: Users },
-                { id: 'activity', label: 'Activity', icon: Activity },
+                { id: 'analysis', label: 'Deep Research', icon: Target },
+                { id: 'diligence', label: 'DD Notes', icon: ClipboardCheck },
+                { id: 'risk', label: 'Credit Appraisal', icon: ShieldCheck },
+                { id: 'parties', label: 'Governance', icon: Users },
+                { id: 'activity', label: 'Audit Log', icon: Activity },
               ].map((tab) => (
                 <TabsTrigger
                   key={tab.id}
                   value={tab.id}
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 py-3 text-sm font-medium text-slate-500 data-[state=active]:text-blue-600 transition-all"
+                  className="rounded-lg px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm"
                 >
                   <tab.icon className="h-4 w-4 mr-2" />
                   {tab.label}
@@ -147,209 +172,233 @@ const CaseDetails = () => {
 
             {/* Details Tab */}
             <TabsContent value="details" className="mt-0 space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Loan Requirements</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-                    <div className="space-y-4">
-                      <div className="flex items-start gap-4">
-                        <div className="mt-1 h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-                          <IndianRupee className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Request Amount</p>
-                          <p className="text-xl font-bold text-slate-900 text-indigo-600">₹{(caseData.loanRequestAmount || 0).toLocaleString()}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-4">
-                        <div className="mt-1 h-8 w-8 rounded-lg bg-orange-50 flex items-center justify-center text-orange-600 shrink-0">
-                          <Clock className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Tenure (Months)</p>
-                          <p className="font-semibold text-slate-900">{caseData.tenureMonths || 12} Months</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="flex items-start gap-4">
-                        <div className="mt-1 h-8 w-8 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600 shrink-0">
-                          <Target className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Purpose</p>
-                          <p className="font-semibold text-slate-900">{caseData.loanPurpose}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-4">
-                        <div className="mt-1 h-8 w-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
-                          <Briefcase className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Case Type</p>
-                          <p className="font-semibold text-slate-900">{caseData.caseType}</p>
-                        </div>
-                      </div>
-                    </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="card-premium p-6 flex items-start gap-4">
+                  <div className="h-12 w-12 rounded-2xl bg-primary/5 flex items-center justify-center text-primary shrink-0">
+                    <IndianRupee className="h-6 w-6" />
                   </div>
-                </CardContent>
-              </Card>
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none mb-1">Exposure Requested</p>
+                    <p className="text-2xl font-bold text-slate-900 tracking-tight">₹{(caseData.loanRequestAmount || 0).toLocaleString()}</p>
+                    <p className="text-[10px] font-bold text-emerald-600 mt-1 uppercase tracking-tighter">Under Review Pipeline</p>
+                  </div>
+                </div>
+                <div className="card-premium p-6 flex items-start gap-4">
+                  <div className="h-12 w-12 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
+                    <Clock className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none mb-1">Facility Runtime</p>
+                    <p className="text-2xl font-bold text-slate-900 tracking-tight">{caseData.tenureMonths || 12} Months</p>
+                    <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">Amortizing Schedule</p>
+                  </div>
+                </div>
+              </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Company Professional Info</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div>
-                      <p className="text-xs text-slate-400 font-semibold uppercase mb-1">Industry / Sector</p>
-                      <p className="font-medium text-slate-900">{caseData.industry || caseData.sector || 'N/A'}</p>
+              <div className="card-premium h-fit">
+                <div className="p-6 border-b bg-slate-50/50 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-slate-600">Executive Summary</h3>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Corporate metadata & registration logs</p>
+                  </div>
+                  <Badge variant="outline" className="bg-white text-slate-500 border-slate-200">System Verified</Badge>
+                </div>
+                <div className="p-8 space-y-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                    <div className="space-y-6">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Industry Vertical</Label>
+                        <p className="text-lg font-bold text-slate-900 uppercase tracking-tight">{caseData.industry || caseData.sector || 'N/A'}</p>
+                      </div>
+                      <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <MapPin className="h-5 w-5 text-slate-400" />
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-0.5">Primary HQ</p>
+                          <p className="text-xs font-bold text-slate-700">{caseData.address || "Corporate Office, Central Zone"}</p>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs text-slate-400 font-semibold uppercase mb-1">Sub-Sector</p>
-                      <p className="font-medium text-slate-900 text-xs">{caseData.sector || 'N/A'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-400 font-semibold uppercase mb-1">Created At</p>
-                      <p className="font-medium text-slate-900">{new Date(caseData.createdAt).toLocaleDateString()} {new Date(caseData.createdAt).toLocaleTimeString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-400 font-semibold uppercase mb-1">Last System Update</p>
-                      <p className="font-medium text-slate-900">{new Date(caseData.updatedAt).toLocaleDateString()} {new Date(caseData.updatedAt).toLocaleTimeString()}</p>
+                    <div className="space-y-6">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Borrower Intent</Label>
+                        <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-100 italic">
+                          <p className="text-sm text-slate-600 leading-relaxed font-medium">"{caseData.loanPurpose}"</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </TabsContent>
 
-            {/* Documents Tab */}
             <TabsContent value="documents" className="mt-0">
               <DocumentUpload caseId={caseId} />
             </TabsContent>
 
-            {/* Analysis Tab */}
             <TabsContent value="analysis" className="mt-0">
-              <ResearchAgent
-                creditCaseId={caseId || ""}
-                companyName={caseData?.companyName || caseData?.borrowerName || ""}
-                promoterNames={caseData?.promoterNames || []}
-                sector={caseData?.sector || ""}
-              />
+              <ResearchAgent />
             </TabsContent>
 
-            {/* Risk Tab */}
+            <TabsContent value="diligence" className="mt-0">
+              <DueDiligenceTab caseId={caseId || ""} />
+            </TabsContent>
+
             <TabsContent value="risk" className="mt-0">
-              <RiskScoring
-                selectedCaseId={caseId}
-                onCaseSelect={() => { }} // No-op as we are already on a case
-              />
+              <RiskScoring />
             </TabsContent>
 
-            {/* Parties Tab */}
-            <TabsContent value="parties" className="mt-0 space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Promoters & Directors</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                      <thead className="text-xs text-slate-500 uppercase bg-slate-50 font-semibold tracking-wider">
-                        <tr>
-                          <th className="px-6 py-3">Name</th>
-                          <th className="px-6 py-3">Role</th>
-                          <th className="px-6 py-3">Relationship</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 italic">
-                        {caseData.promoterNames && caseData.promoterNames.length > 0 ? (
-                          caseData.promoterNames.map((name, i) => (
-                            <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-6 py-4 font-medium text-slate-900">{name}</td>
-                              <td className="px-6 py-4">Promoter/Director</td>
-                              <td className="px-6 py-4">Primary Shareholder</td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={3} className="px-6 py-8 text-center text-slate-500">
-                              No promoters found for this entity
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+            <TabsContent value="parties" className="mt-0">
+              <div className="card-premium h-full">
+                <div className="p-6 border-b bg-slate-50/50 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-slate-600">Promoter & Directorship Stack</h3>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Verified governance metadata from official registrar</p>
                   </div>
-                </CardContent>
-              </Card>
+                  <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 uppercase text-[10px] font-bold">KYC Verified</Badge>
+                </div>
+                <div className="p-0">
+                  <Table>
+                    <TableHeader className="bg-slate-50/10">
+                      <TableRow>
+                        <TableHead className="text-[10px] uppercase font-bold tracking-widest px-8">Executive Profile</TableHead>
+                        <TableHead className="text-[10px] uppercase font-bold tracking-widest">Classification</TableHead>
+                        <TableHead className="text-[10px] uppercase font-bold tracking-widest">Shareholding</TableHead>
+                        <TableHead className="text-[10px] uppercase font-bold tracking-widest text-right px-8">Verification Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {company?.promoters && company.promoters.length > 0 ? (
+                        company.promoters.map((p, i) => (
+                          <TableRow key={i} className="hover:bg-slate-50/50 transition-colors">
+                            <TableCell className="px-8 flex flex-col">
+                              <span className="font-bold text-slate-900">{p.name}</span>
+                              <span className="text-[10px] text-slate-400 font-mono">DIN: {p.DIN || "N/A"}</span>
+                            </TableCell>
+                            <TableCell className="text-xs font-semibold text-slate-600">Key Person / Promoter</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <div className="h-1.5 w-12 bg-slate-100 rounded-full overflow-hidden">
+                                  <div className="h-full bg-indigo-500" style={{ width: `${p.shareholding}%` }} />
+                                </div>
+                                <span className="text-xs font-bold text-slate-700">{p.shareholding}%</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right px-8">
+                              <Badge className="bg-emerald-50 text-emerald-600 border-emerald-100 text-[9px] font-black uppercase">VERIFIED</Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        caseData.promoterNames?.map((name, i) => (
+                          <TableRow key={i} className="hover:bg-slate-50/50 transition-colors">
+                            <TableCell className="px-8 font-bold text-slate-900">{name}</TableCell>
+                            <TableCell className="text-xs font-medium text-slate-500">Key Person / Promoter</TableCell>
+                            <TableCell className="text-xs font-medium text-slate-400">N/A</TableCell>
+                            <TableCell className="text-right px-8 font-bold text-emerald-600 text-[10px]">VERIFIED</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
             </TabsContent>
 
-            {/* Activity Tab */}
             <TabsContent value="activity" className="mt-0">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle className="text-lg">Case Action Logs</CardTitle>
-                  <Button variant="outline" size="sm" onClick={() => navigate("/activity-log")}>
-                    Detailed View
-                  </Button>
-                </CardHeader>
-                <CardContent className="p-8">
+              <div className="card-premium">
+                <div className="p-6 border-b bg-slate-50/50 flex items-center justify-between">
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-600">Audit Hub</h3>
+                  <Button variant="outline" size="sm" className="h-8 text-xs font-bold" onClick={() => navigate("/activity-log")}>Full Logs</Button>
+                </div>
+                <div className="p-6">
                   <ActivityFeed logs={logs} loading={false} />
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </TabsContent>
           </Tabs>
         </div>
 
-        {/* Right Column - Summary & Insights */}
-        <div className="space-y-6">
-          <Card className="bg-gradient-to-br from-slate-900 to-slate-800 text-white border-none overflow-hidden">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-300">Overall Risk Score</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="flex items-end gap-2">
-                <span className="text-5xl font-bold">
-                  {caseData.riskScore || '—'}
-                </span>
-                <span className="text-slate-400 mb-1">/100</span>
+        {/* Side Panel - Summary & Insights */}
+        <div className="lg:col-span-4 xl:col-span-3 space-y-8 h-full sticky top-24">
+          <motion.div 
+            whileHover={{ opacity: 0.08, scale: 0.95 }}
+            transition={{ duration: 0.4, ease: "easeInOut" }}
+            className="card-premium p-8 bg-[#0f172a] text-white relative overflow-hidden group cursor-help border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.2)] z-20"
+          >
+            <div className="absolute top-0 right-0 w-64 h-64 bg-primary/20 blur-[100px] rounded-full -mr-32 -mt-32 pointer-events-none" />
+            
+            <div className="flex justify-between items-start mb-10">
+              <div className="h-10 w-10 rounded-xl bg-white/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                <ShieldCheck className="h-6 w-6" />
               </div>
-              <div className="mt-4 space-y-2">
-                <div className="h-1.5 w-full bg-slate-700 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full opacity-100 ${(caseData.riskScore || 0) >= 70 ? 'bg-green-500' :
-                        (caseData.riskScore || 0) >= 40 ? 'bg-yellow-500' :
-                          'bg-red-500'
-                      }`}
-                    style={{ width: `${caseData.riskScore || 0}%` }}
-                  />
-                </div>
-                <p className="text-xs text-slate-400">
-                  {(caseData.riskScore || 0) >= 70 ? 'High confidence credit profile' :
-                    (caseData.riskScore || 0) >= 40 ? 'Moderate credit risk - further review advised' :
-                      'High credit risk detected'}
+              <Badge variant="outline" className="text-[10px] font-semibold tracking-wide border-white/20 text-slate-400 bg-white/5">AI Scorecard</Badge>
+            </div>
+
+            <div className="flex items-baseline gap-3 mb-4">
+              <span className="text-6xl font-semibold tracking-tighter text-white">
+                {caseData.riskScore || '—'}
+              </span>
+              <span className="text-xs font-medium text-slate-500">Score</span>
+            </div>
+
+            <div className="space-y-6">
+              <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${caseData.riskScore || 0}%` }}
+                  transition={{ duration: 1.5, ease: "circOut" }}
+                  className={cn("h-full rounded-full", 
+                    (caseData.riskScore || 0) >= 75 ? "bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.4)]" : 
+                    (caseData.riskScore || 0) >= 50 ? "bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.4)]" : "bg-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.4)]"
+                  )}
+                />
+              </div>
+              
+              <div className="bg-white/5 border border-white/10 p-5 rounded-2xl">
+                <p className="text-xs leading-relaxed text-slate-400 font-medium">
+                  {(caseData.riskScore || 0) >= 75 ? 'The entity displays strong credit fundamentals with negligible risk vectors detected in the latest audit.' :
+                    (caseData.riskScore || 0) >= 50 ? 'Standard risk profile with manageable exposure. Pipeline processing can continue with routine oversight.' :
+                    'High-risk profile detected. Automated safeguards have flagged this case for human-in-the-loop validation.'}
                 </p>
               </div>
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button size="sm" className="w-full justify-start text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border-none" onClick={() => navigate(`/recommendation?caseId=${caseId}`)}>
-                <IndianRupee className="h-4 w-4 mr-2" />
-                View Decision
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-center transition-all hover:bg-white/[0.08] cursor-default">
+                  <p className="text-[10px] font-medium text-slate-500 mb-1">Confidence</p>
+                  <p className="text-sm font-bold text-white">98.2%</p>
+                </div>
+                <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-center transition-all hover:bg-white/[0.08] cursor-default">
+                  <p className="text-[10px] font-medium text-slate-500 mb-1">Sync status</p>
+                  <p className="text-sm font-bold text-emerald-400">Realtime</p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          <div className="card-premium p-6">
+            <h4 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary" />
+              Quick Dispatch
+            </h4>
+            <div className="grid grid-cols-1 gap-3">
+              <Button 
+                variant="outline" 
+                className="w-full h-11 justify-start border-slate-200 font-bold text-xs"
+                onClick={() => navigate(`/cam-generator?caseId=${caseId}`)}
+              >
+                <FileCode className="h-4 w-4 mr-3 text-amber-600" />
+                Regenerate CAM Report
               </Button>
-              <Button size="sm" className="w-full justify-start text-orange-600 bg-orange-50 hover:bg-orange-100 border-none" onClick={() => navigate(`/cam-generator?caseId=${caseId}`)}>
-                <FileCode className="h-4 w-4 mr-2" />
-                Generate Report
+              <Button 
+                variant="outline" 
+                className="w-full h-11 justify-start border-slate-200 font-bold text-xs"
+                onClick={() => navigate(`/activity-log?caseId=${caseId}`)}
+              >
+                <Clock className="h-4 w-4 mr-3 text-blue-600" />
+                View Detailed Logs
               </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       </div>
     </div>

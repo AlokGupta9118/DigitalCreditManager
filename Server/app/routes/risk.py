@@ -11,8 +11,9 @@ from app.database import risk_collection, research_collection, credit_cases_coll
 from app.models.risk_score import RiskScore
 from app.models.activity_log import create_activity_log
 from ai_pipeline.agents.credit_scoring_agent import run_credit_scoring
+from app.workflow_manager import WorkflowOrchestrator
 
-router = APIRouter(prefix="/risk", tags=["Risk Agent"])
+router = APIRouter(prefix="/risk", tags=["Credit Appraisal Engine"])
 logger = logging.getLogger(__name__)
 executor = ThreadPoolExecutor(max_workers=2)
 
@@ -82,8 +83,25 @@ async def run_risk_agent(case_id: str, background_tasks: BackgroundTasks = None)
         else:
             dd_text = "No site visit or due diligence data available."
 
-        # Execute in background thread pool to not block FastAPI
-        loop = asyncio.get_event_loop()
+        # Get extracted financial data from documents
+        from app.database import financial_data_collection, documents_collection
+        docs = list(documents_collection.find({"creditCaseId": case_id}))
+        doc_ids = [str(d["_id"]) for d in docs]
+        
+        financials = list(financial_data_collection.find({"documentId": {"$in": doc_ids}}))
+        financial_metrics_text = ""
+        for f in financials:
+            doc_type = f.get("documentType", "Unknown")
+            fy = f.get("financialYear", "N/A")
+            data = f.get("data", {})
+            if data:
+                financial_metrics_text += f"\n--- EXTRACTED {doc_type} (FY {fy}) ---\n"
+                for key, val in data.items():
+                    if val is not None:
+                        financial_metrics_text += f"{key}: {val}\n"
+
+        # Capture the event loop now (we're in an async context) and pass it to the thread
+        loop = asyncio.get_running_loop()
         loop.run_in_executor(
             executor,
             execute_risk_and_store_sync,
@@ -91,7 +109,9 @@ async def run_risk_agent(case_id: str, background_tasks: BackgroundTasks = None)
             case_id,
             company_name,
             research_text,
-            dd_text
+            dd_text,
+            financial_metrics_text,
+            loop
         )
 
         return {
@@ -112,11 +132,19 @@ def execute_risk_and_store_sync(
     case_id: str,
     company_name: str,
     research_text: str,
-    due_diligence_text: str = ""
+    due_diligence_text: str = "",
+    financial_metrics_text: str = "",
+    main_loop: Optional[asyncio.AbstractEventLoop] = None
 ):
     try:
         # Run agent
-        scoring_result = run_credit_scoring(company_name, research_text, due_diligence_text, interactive=False)
+        scoring_result = run_credit_scoring(
+            company_name, 
+            research_text, 
+            due_diligence_text, 
+            financial_metrics_text,
+            interactive=False
+        )
         scorecard_text = scoring_result.get("scorecard", "")
         
         # Parse scorecard for basic values and individual category scores
@@ -201,8 +229,20 @@ def execute_risk_and_store_sync(
 
         logger.info(f"Risk assessment {risk_id} completed for case {case_id}")
         
+        # Trigger next workflow steps safely from the thread
+        try:
+            if main_loop and main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    WorkflowOrchestrator.trigger_next_steps(case_id, "RISK"),
+                    main_loop
+                )
+            else:
+                logger.warning("No running event loop available, skipping workflow trigger")
+        except Exception as wf_err:
+            logger.warning(f"Could not trigger next workflow steps: {wf_err}")
+        
     except Exception as e:
-        logger.error(f"Risk assessment failed: {str(e)}")
+        logger.error(f"Risk assessment failed: {str(e)}", exc_info=True)
         risk_collection.update_one(
             {"_id": ObjectId(risk_id)},
             {"$set": {

@@ -160,7 +160,8 @@ const CAMGenerator = () => {
   };
 
   const pipelineOk = researchReady && riskReady && recReady;
-  const canGenerate = recFinalized;
+  const isApproved = finalizeStatus?.finalStatus === "APPROVED" || finalizeStatus?.finalStatus === "REVIEWED";
+  const canGenerate = recFinalized && isApproved;
 
   const statusRow = (
     label: string,
@@ -351,7 +352,11 @@ const CAMGenerator = () => {
               <div>
                 {!pipelineOk
                   ? "Complete Research → Risk → Recommendation before generating the Credit Memo."
-                  : "The credit recommendation must be accepted or overridden by a credit officer in the Loan Recommendation page before generating the CAM."
+                  : !recFinalized 
+                    ? "The credit recommendation must be Accepted or Overridden by a credit officer in the Loan Recommendation page before generating the CAM."
+                    : !isApproved
+                      ? "The CAM can only be generated for APPROVED cases. The current recommendation status is " + (finalizeStatus?.finalStatus || "REJECTED") + "."
+                      : ""
                 }
               </div>
             </div>

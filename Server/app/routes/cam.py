@@ -14,7 +14,8 @@ from app.database import (
     risk_collection,
     recommendation_collection,
     cam_collection,
-    due_diligence_collection
+    due_diligence_collection,
+    activity_log_collection
 )
 from ai_pipeline.agents.report_generator import generate_report
 
@@ -261,6 +262,16 @@ def generate_cam(case_id: str):
             "finalDecision": final_decision,
         }
         result = cam_collection.insert_one(cam_doc)
+        
+        # Log activity
+        from app.models.activity_log import create_activity_log
+        create_activity_log(
+            activity_log_collection,
+            action=f"CAM Generated: {final_decision}",
+            category="CAM",
+            case_id=case_id,
+            details={"format": "pdf", "decision": final_decision}
+        )
 
         return {
             "message": "CAM generated successfully",
@@ -350,6 +361,9 @@ async def generate_docx_cam(case_id: str):
             f"Finalized At: {finalized_rec.get('finalizedAt', 'N/A')}\n"
         )
 
+        # Fetch structured data for inclusion in report
+        structured_financials = list(financial_data_collection.find({"creditCaseId": case_id}))
+
         filename = f"CAM_{company['companyName'].replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
 
         docx_path = generate_report(
@@ -357,7 +371,8 @@ async def generate_docx_cam(case_id: str):
             research_text=research_text,
             scorecard_text=scorecard_text + officer_decision_text,
             due_diligence_text=dd_text,
-            output_filename=filename
+            output_filename=filename,
+            structured_financials=structured_financials
         )
 
         import shutil

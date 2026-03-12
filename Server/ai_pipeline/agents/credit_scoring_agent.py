@@ -22,6 +22,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import CHROMA_COLLECTION_NAME, CHROMA_DB_DIR, OUTPUT_DIR
+from langchain_core.messages import SystemMessage, HumanMessage
 
 logger = logging.getLogger(__name__)
 
@@ -250,10 +251,9 @@ def _get_lending_decision(score: float, red_flags: list) -> dict:
 # LangGraph ReAct Agent for Credit Scoring
 # ============================================================
 
-def create_scoring_agent(company_name: str, research_report: str, due_diligence_report: str = ""):
+def create_scoring_agent(company_name: str, research_report: str, due_diligence_report: str = "", financial_metrics: str = ""):
     """Create the LangGraph ReAct Credit Scoring Agent."""
     from langgraph.prebuilt import create_react_agent
-    from langchain_core.messages import SystemMessage
     from langchain_core.tools import tool
     from langchain_setup import get_llm
 
@@ -282,12 +282,12 @@ WEIGHT: {cat['weight'] * 100}%
 
 RESEARCH REPORT:
 \"\"\"
-{research_report[:6000]}
+{research_report[:6000].replace('{', '{{').replace('}', '}}')}
 \"\"\"
 
 DUE DILIGENCE (SITE VISIT) REPORT:
 \"\"\"
-{due_diligence_report if due_diligence_report else "No site visit data available."}
+{due_diligence_report.replace('{', '{{').replace('}', '}}') if due_diligence_report else "No site visit data available."}
 \"\"\"
 
 You MUST respond with ONLY valid JSON (no markdown, no extra text):
@@ -345,17 +345,20 @@ DO NOT guess or be optimistic. If you don't see it, it doesn't exist."""
         Input: specific question to verify against documents."""
         try:
             from vector_store.chroma_store import query_documents
+            # Increased n_results to 12 for better data coverage
             results = query_documents(
-                query_text=query, n_results=3,
+                query_text=query, n_results=12,
                 collection_name=CHROMA_COLLECTION_NAME, persist_dir=CHROMA_DB_DIR,
             )
             if not results.get("results"):
                 return "No relevant documents found for cross-checking."
             output = ""
-            for i, r in enumerate(results["results"][:3], 1):
+            # Return more results with more context
+            for i, r in enumerate(results["results"][:8], 1):
                 doc_type = r["metadata"].get("document_type", "N/A")
                 file_name = r["metadata"].get("file_name", "N/A")
-                output += f"[{i}] {file_name} ({doc_type}): {r['text'][:300]}\n"
+                snippet = r["text"][:500].replace('\n', ' ')
+                output += f"[{i}] {file_name} ({doc_type}): {snippet}...\n"
             return output
         except Exception as e:
             return f"Document cross-check failed: {e}"
@@ -407,7 +410,12 @@ COMPANY: {company_name}
 
 DUE DILIGENCE (SITE VISIT) OBSERVATIONS:
 \"\"\"
-{due_diligence_report if due_diligence_report else "NO SITE VISIT DATA RECORDED. Treat this as a significant governance and risk monitoring gap."}
+{due_diligence_report.replace('{', '{{').replace('}', '}}') if due_diligence_report else "NO SITE VISIT DATA RECORDED. Treat this as a significant governance and risk monitoring gap."}
+\"\"\"
+
+STRUCTURED FINANCIAL METRICS (Extracted from Documents):
+\"\"\"
+{financial_metrics.replace('{', '{{').replace('}', '}}') if financial_metrics else "No structured metrics available. Use the cross_check_documents tool to query specific document contents."}
 \"\"\"
 
 You have received a detailed research report and site visit notes. Your job is to
@@ -478,8 +486,8 @@ IMPORTANT RULES:
 - If data is missing, score 40-50 and flag it
 """)
 
-    agent = create_react_agent(model=llm, tools=tools, messages_modifier=system_prompt.content)
-    return agent
+    agent = create_react_agent(model=llm, tools=tools)
+    return agent, system_prompt
 
 
 # ============================================================
@@ -490,19 +498,11 @@ def run_credit_scoring(
     company_name: str,
     research_report: str,
     due_diligence_report: str = "",
+    financial_metrics: str = "",
     interactive: bool = True,
 ) -> Dict:
-    """Run the Credit Scoring Agent on a research report.
-
-    Args:
-        company_name: Name of the company
-        research_report: Full text of the research report
-        interactive: If True, show human-in-the-loop options
-
-    Returns:
-        Dict with scoring results
-    """
-    agent = create_scoring_agent(company_name, research_report, due_diligence_report)
+    """Run the Credit Scoring Agent on a research report."""
+    agent, system_prompt = create_scoring_agent(company_name, research_report, due_diligence_report, financial_metrics)
 
     scoring_query = (
         f"Score the creditworthiness of '{company_name}' using the research report provided. "
@@ -528,7 +528,7 @@ def run_credit_scoring(
 
     try:
         result = agent.invoke(
-            {"messages": [{"role": "user", "content": scoring_query}]}
+            {"messages": [system_prompt, HumanMessage(content=scoring_query)]}
         )
 
         final_answer = ""

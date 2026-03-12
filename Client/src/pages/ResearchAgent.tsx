@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -104,6 +106,7 @@ const ResearchAgent = () => {
     try {
       const cases = await caseService.getCasesByCompany(companyId);
       if (cases && cases.length > 0) {
+        // If only one case, auto-select it. Otherwise keep it for user to see
         setSelectedCaseId(cases[0]._id);
       }
     } catch (error) {
@@ -281,124 +284,117 @@ const runResearch = async () => {
   }
 
   return (
-    <div className="space-y-6">
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="space-y-8 animate-in"
+    >
       {/* Header with company selector */}
-      <Card className="shadow-card">
+      <div className="space-y-1">
+        <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Credit Research</h2>
+        <p className="text-sm text-slate-500">Run AI-powered research on company filings, credit ratings, and legal records.</p>
+      </div>
+
+      <Card className="card-premium">
         <CardContent className="p-6">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold flex items-center gap-2">
-                <Target className="h-6 w-6 text-primary" />
-                Credit Research
-              </h2>
-              
-              <div className="flex gap-2">
-                {research && (
-                  <Button variant="outline" onClick={loadLatestResearch}>
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Refresh
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Company Selector */}
-            <div className="flex items-end gap-4">
-              <div className="flex-1">
-                <label className="text-sm font-medium mb-2 block">
-                  Select Company to Research
-                </label>
-                <Select
-                  value={selectedCompanyId}
-                  onValueChange={handleCompanyChange}
-                  disabled={running || loadingCompanies}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Choose a company..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {loadingCompanies ? (
-                      <div className="flex items-center justify-center p-4">
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        Loading...
-                      </div>
-                    ) : companies.length > 0 ? (
-                      companies.map((company) => (
-                        <SelectItem key={company._id} value={company._id || ""}>
-                          <div className="flex items-center gap-2">
-                            <Building className="h-4 w-4" />
-                            <span>{company.companyName}</span>
-                            {company.sector && (
-                              <Badge variant="outline" className="ml-2 text-xs">
-                                {company.sector}
-                              </Badge>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <div className="p-2 text-sm text-muted-foreground">
-                        No companies found
-                      </div>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <Button 
-                onClick={runResearch} 
-                disabled={running || !selectedCompanyId}
-                className="min-w-[150px]"
+          <div className="flex flex-col md:flex-row items-start gap-6">
+            <div className="flex-1 w-full space-y-2">
+              <label className="text-xs font-medium text-slate-500">
+                Company
+              </label>
+              <Select
+                value={selectedCompanyId}
+                onValueChange={handleCompanyChange}
+                disabled={running || loadingCompanies}
               >
-                {running ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Researching...
-                  </>
-                ) : research ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Re-run Research
-                  </>
-                ) : (
-                  <>
-                    <Target className="h-4 w-4 mr-2" />
-                    Run Research
-                  </>
-                )}
-              </Button>
+                <SelectTrigger className="w-full h-11 border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white hover:border-slate-300 transition-colors">
+                  <SelectValue placeholder="Select a company" />
+                </SelectTrigger>
+                <SelectContent className="rounded-lg border-slate-200">
+                  {loadingCompanies ? (
+                    <div className="flex items-center justify-center p-4">
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Loading...
+                    </div>
+                  ) : companies.length > 0 ? (
+                    companies.map((company) => (
+                      <SelectItem key={company._id} value={company._id || ""} className="rounded-md">
+                        <div className="flex items-center gap-2">
+                          <Building className="h-3.5 w-3.5 text-slate-400" />
+                          <span className="font-medium">{company.companyName}</span>
+                        </div>
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <div className="p-2 text-sm text-muted-foreground font-medium">
+                      No companies found
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
             </div>
 
-            {selectedCompany && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                <Badge variant="secondary">
-                  <Building className="h-3 w-3 mr-1" />
-                  {selectedCompany.companyName}
-                </Badge>
-                {selectedCompany.sector && (
-                  <Badge variant="outline">
-                    Sector: {selectedCompany.sector}
-                  </Badge>
-                )}
-                {selectedCompany.promoterNames && selectedCompany.promoterNames.length > 0 && (
-                  <Badge variant="outline">
-                    Promoters: {selectedCompany.promoterNames.join(", ")}
-                  </Badge>
-                )}
-              </div>
-            )}
+            <div className="w-px h-16 bg-slate-100 hidden md:block" />
+
+            <div className="flex-1 w-full space-y-2">
+               <label className="text-xs font-medium text-slate-500">
+                Active case
+              </label>
+              {selectedCompany?.companyName ? (
+                <div className="h-11 px-4 flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-200/60">
+                  <div className="flex items-center gap-2.5">
+                    <FileText className="h-4 w-4 text-emerald-600" />
+                    <span className="text-sm font-medium text-slate-700 truncate">
+                      {selectedCompany.companyName}
+                    </span>
+                  </div>
+                  <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] font-semibold">Active</Badge>
+                </div>
+              ) : (
+                <div className="h-11 px-4 flex items-center justify-center rounded-lg bg-slate-50 border border-dashed border-slate-200 text-slate-400 text-sm">
+                  No case selected
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 md:pt-0">
+               {selectedCompanyId && creditCaseId && !running && (
+                <Button 
+                  onClick={runResearch} 
+                  disabled={running}
+                  className="btn-primary h-11 px-6 rounded-lg text-sm font-medium shadow-md"
+                >
+                  {running ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Researching...
+                    </>
+                  ) : research ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Re-run Research
+                    </>
+                  ) : (
+                    <>
+                      <Target className="h-4 w-4 mr-2" />
+                      Run Research
+                    </>
+                  )}
+                </Button>
+               )}
+            </div>
           </div>
 
           {running && (
-            <div className="mt-4 p-4 bg-primary/5 rounded-lg">
-              <div className="flex items-center gap-2 text-primary mb-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span className="font-medium">Research in progress...</span>
-              </div>
-              <Progress value={45} className="h-2" />
-              <p className="text-sm text-muted-foreground mt-2">
-                This may take 1-2 minutes. The agent is searching MCA filings, credit ratings, court records, and financial data.
-              </p>
+            <div className="mt-6 p-5 bg-slate-50 border border-slate-200 rounded-xl">
+               <div className="flex items-center gap-3 mb-3">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-800">Research in progress</h4>
+                    <p className="text-xs text-slate-500">Scanning MCA filings, court records, and market data. This may take 1-2 minutes.</p>
+                  </div>
+               </div>
+               <Progress value={65} className="h-1.5" />
             </div>
           )}
         </CardContent>
@@ -406,12 +402,14 @@ const runResearch = async () => {
 
       {/* No Research State */}
       {!research && !running && (
-        <Card className="shadow-card">
-          <CardContent className="py-16 text-center">
-            <FileText className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-xl font-medium mb-2">No Research Available</h3>
-            <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-              Select a company and run credit research to get comprehensive analysis including company profile, financials, credit ratings, litigation, and regulatory compliance.
+        <Card className="card-premium border-none py-24">
+          <CardContent className="text-center space-y-4">
+            <div className="h-24 w-24 bg-slate-50 rounded-full flex items-center justify-center mx-auto shadow-sm border border-slate-100">
+              <FileText className="h-10 w-10 text-slate-300" />
+            </div>
+            <h3 className="text-xl font-semibold text-slate-800">No research available</h3>
+            <p className="text-sm text-slate-500 max-w-md mx-auto">
+              Select a company above and run the research to get a comprehensive analysis of their financials, credit ratings, legal history, and compliance.
             </p>
           </CardContent>
         </Card>
@@ -419,32 +417,39 @@ const runResearch = async () => {
 
       {/* Research Results */}
       {research && research.overallRisk && research.overallRisk !== "PROCESSING" && research.overallRisk !== "ERROR" && (
-        <Card className="shadow-card mt-6">
-          <CardHeader>
+        <Card className="card-premium mt-4">
+          <CardHeader className="p-6 border-b bg-slate-50/50">
             <div className="flex items-center justify-between flex-wrap gap-4">
-              <CardTitle>Comprehensive Research Report: {research.companyName}</CardTitle>
-              <Badge variant="outline" className={`text-sm px-3 py-1 ${getRiskColor(research.overallRisk || '')}`}>
-                Risk Level: {research.overallRisk || 'UNKNOWN'}
+              <CardTitle className="text-lg font-semibold text-slate-900">
+                 Research Report — {research.companyName}
+              </CardTitle>
+              <Badge className={cn("text-xs font-semibold px-3 py-1", 
+                research.overallRisk.toUpperCase() === 'LOW' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
+                research.overallRisk.toUpperCase() === 'MEDIUM' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+              )}>
+                {research.overallRisk} risk
               </Badge>
             </div>
           </CardHeader>
           
-          <CardContent>
+          <CardContent className="p-0">
             {research.rawResearch ? (
-              <ScrollArea className="h-[600px] w-full rounded-md border p-4 bg-muted/10">
-                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
-                  {research.rawResearch}
-                </pre>
+              <ScrollArea className="h-[600px] w-full p-6">
+                <div className="max-w-none">
+                  <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-600">
+                    {research.rawResearch}
+                  </pre>
+                </div>
               </ScrollArea>
             ) : (
-              <div className="py-12 text-center text-muted-foreground">
-                No research data available for this case. Try re-running the research.
+              <div className="py-16 text-center text-slate-400 text-sm">
+                Data Stream unavailable or malformed.
               </div>
             )}
           </CardContent>
         </Card>
       )}
-    </div>
+    </motion.div>
   );
 };
 

@@ -10,6 +10,7 @@ from app.database import research_collection, activity_log_collection
 from app.models.research import Research
 from app.models.activity_log import create_activity_log
 from ai_pipeline.agents.research_agent import run_automated_research
+from app.workflow_manager import WorkflowOrchestrator
 
 router = APIRouter(prefix="/research", tags=["Research"])
 logger = logging.getLogger(__name__)
@@ -120,12 +121,29 @@ def execute_research_and_store_sync(
 ):
     """Synchronous version for thread pool execution"""
     try:
-        # Run the automated research agent - NO auto_mode parameter
+        # Get extracted financial data from documents
+        from app.database import financial_data_collection, documents_collection
+        docs = list(documents_collection.find({"creditCaseId": creditCaseId}))
+        doc_ids = [str(d["_id"]) for d in docs]
+        
+        financials = list(financial_data_collection.find({"documentId": {"$in": doc_ids}}))
+        financial_metrics_text = ""
+        for f in financials:
+            doc_type = f.get("documentType", "Unknown")
+            fy = f.get("financialYear", "N/A")
+            data = f.get("data", {})
+            if data:
+                financial_metrics_text += f"\n--- EXTRACTED {doc_type} (FY {fy}) ---\n"
+                for key, val in data.items():
+                    if val is not None:
+                        financial_metrics_text += f"{key}: {val}\n"
+
+        # Run the automated research agent
         research_iterations = run_automated_research(
             company_name=companyName,
             promoter_names=promoterNames,
-            sector=sector
-            # Removed auto_mode parameter
+            sector=sector,
+            structured_data=financial_metrics_text
         )
         
         # Get final findings
@@ -162,6 +180,9 @@ def execute_research_and_store_sync(
         )
         
         logger.info(f"Research {research_id} completed successfully")
+        
+        # Trigger next workflow steps safely
+        asyncio.create_task(WorkflowOrchestrator.trigger_next_steps(creditCaseId, "RESEARCH"))
         
     except Exception as e:
         logger.error(f"Research execution failed: {e}")

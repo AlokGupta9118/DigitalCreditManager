@@ -23,7 +23,7 @@ import sys
 import re
 import glob
 import logging
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -758,6 +758,7 @@ def generate_report(
     scorecard_text: str,
     due_diligence_text: str = "",
     output_filename: str = None,
+    structured_financials: Optional[List[Dict]] = None,
 ) -> str:
     """Generate a professional DOCX credit analysis report.
 

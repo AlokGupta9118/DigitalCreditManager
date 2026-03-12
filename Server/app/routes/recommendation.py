@@ -10,6 +10,7 @@ import re
 from app.database import recommendation_collection, risk_collection, credit_cases_collection, due_diligence_collection, activity_log_collection
 from app.models.recommendation import Recommendation
 from app.models.activity_log import create_activity_log
+from app.workflow_manager import WorkflowOrchestrator
 
 router = APIRouter(prefix="/recommendation", tags=["Recommendation Agent"])
 logger = logging.getLogger(__name__)
@@ -257,15 +258,9 @@ async def finalize_recommendation(case_id: str, data: dict):
             details={"decision": decision, "status": final_status, "comments": comments}
         )
 
-        # Update case status as well
-        credit_cases_collection.update_one(
-            {"_id": ObjectId(case_id)},
-            {"$set": {
-                "status": final_status,
-                "updatedAt": now,
-            }}
-        )
-
+        # Trigger next workflow steps (CAM Generation)
+        await WorkflowOrchestrator.trigger_next_steps(case_id, "RECOMMENDATION")
+        
         return {
             "status": "success",
             "message": f"Case {decision.lower()} successfully",

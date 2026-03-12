@@ -9,62 +9,73 @@ from typing import Dict, Optional
 logger = logging.getLogger(__name__)
 
 
-def get_ollama_client():
-    """Get an Ollama client instance."""
+def _get_llm():
+    """Get the optimized LLM with fallbacks from langchain_setup."""
     try:
-        import ollama
-        return ollama
+        from langchain_setup import get_llm
+        return get_llm(temperature=0.0) # Zero temperature for precision extraction
     except ImportError:
-        raise ImportError("ollama is required. Install: pip install ollama")
+        try:
+            from ai_pipeline.langchain_setup import get_llm
+            return get_llm(temperature=0.0)
+        except ImportError:
+            logger.warning("langchain_setup not found. Falling back to basic Ollama.")
+            return None
 
 
 def classify_document(text: str, model: str = "llama3") -> Dict:
     """
     Use LLM to classify the type of financial document.
-
-    Args:
-        text: First ~2000 characters of the document.
-        model: Ollama model name.
-
-    Returns:
-        Dict with "document_type", "confidence", "reasoning".
     """
-    ollama = get_ollama_client()
-    snippet = text[:2000]
+    llm = _get_llm()
+    snippet = text[:3000] # Slightly more context for classification
 
-    prompt = f"""You are a financial document classifier for Indian corporate credit analysis.
+    prompt = f"""You are a specialized financial document classifier for Indian corporate credit analysis.
+Your goal is to accurately identify the document type from the provided snippet.
 
-Classify this document into ONE of these categories:
-- GST_RETURN (GSTR-1, GSTR-3B, GSTR-2A filings)
-- ITR (Income Tax Return)
-- BANK_STATEMENT (bank transaction records)
-- ANNUAL_REPORT (company annual report)
-- FINANCIAL_STATEMENT (balance sheet, P&L statement, cash flow statement)
-- LEGAL_NOTICE (litigation documents, court orders, legal notices)
-- SANCTION_LETTER (loan sanction letters from banks)
-- BOARD_MINUTES (board meeting minutes)
-- RATING_REPORT (credit rating agency reports - CRISIL, ICRA, CARE, etc.)
-- SHAREHOLDING (shareholding pattern)
-- QUALITATIVE_NOTE (qualitative observations from credit officers)
-- OTHER (if none of the above)
+CONTEXT: Indian Banking & Credit Analysis
+CATEGORIES:
+- GST_RETURN: GSTR-1, GSTR-3B, GSTR-9, GST registration
+- ITR: Income Tax Returns (Forms 1-7), Tax audit reports (3CD)
+- BANK_STATEMENT: Periodic transaction records from any Indian bank
+- ANNUAL_REPORT: Full year company reports (Directors' report, auditors' report)
+- FINANCIAL_STATEMENT: Balance sheets, Profit & Loss (P&L), Cash flow statements
+- LEGAL_NOTICE: Litigation filings, court orders (eCourts), legal notices
+- SANCTION_LETTER: Loan approval/sanction letters from other banks
+- BOARD_MINUTES: Minutes of board of directors or committee meetings
+- RATING_REPORT: Credit rating reports from CRISIL, ICRA, CARE, India Ratings, etc.
+- SHAREHOLDING: Detailed shareholding patterns
+- QUALITATIVE_NOTE: Observations, due diligence notes, or market feedback
+- OTHER: Use only if none of the above match clearly
 
-Document text (first 2000 chars):
+DOCUMENT TEXT (SNIPPET):
 \"\"\"
 {snippet}
 \"\"\"
 
 Respond ONLY with valid JSON in this exact format:
-{{"document_type": "...", "confidence": 0.0, "reasoning": "..."}}
+{{"document_type": "CATEGORY_NAME", "confidence": 0.0-1.0, "reasoning": "brief explanation"}}
 """
 
     try:
-        response = ollama.chat(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            format="json",
-        )
-        result = json.loads(response["message"]["content"])
-        logger.info(f"Document classified as: {result.get('document_type', 'UNKNOWN')}")
+        if llm:
+            response = llm.invoke(prompt)
+            content = response.content if hasattr(response, 'content') else str(response)
+        else:
+            # Absolute fallback to raw Ollama
+            import ollama
+            resp = ollama.chat(model=model, messages=[{"role": "user", "content": prompt}], format="json")
+            content = resp["message"]["content"]
+            
+        # Robust JSON parsing
+        content = content.strip()
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+            
+        result = json.loads(content)
+        logger.info(f"Document classified as: {result.get('document_type', 'UNKNOWN')} with {result.get('confidence', 0)} confidence")
         return result
     except Exception as e:
         logger.warning(f"LLM classification failed: {e}. Defaulting to OTHER.")
@@ -77,33 +88,33 @@ Respond ONLY with valid JSON in this exact format:
 
 def extract_financial_data(text: str, document_type: str, model: str = "llama3") -> Dict:
     """
-    Use LLM to extract structured financial data from document text.
-    The extraction prompt is customized based on document type.
-
-    Args:
-        text: Full document text (will be truncated to ~6000 chars for LLM).
-        document_type: Type of document (from classify_document).
-        model: Ollama model name.
-
-    Returns:
-        Dict with extracted structured data.
+    Use High-Reasoning LLM (Groq 70B) to extract structured financial data.
     """
-    ollama = get_ollama_client()
+    llm = _get_llm()
+    
+    # Increase context window for complex financial documents
+    truncated_text = text[:12000] # Groq supports larger context, use it for better extraction
 
-    # Truncate to avoid token limits
-    truncated_text = text[:6000]
-
-    # Get type-specific extraction prompt
     extraction_prompt = _get_extraction_prompt(document_type, truncated_text)
 
     try:
-        response = ollama.chat(
-            model=model,
-            messages=[{"role": "user", "content": extraction_prompt}],
-            format="json",
-        )
-        result = json.loads(response["message"]["content"])
-        logger.info(f"Extracted {len(result)} fields from {document_type}")
+        if llm:
+            response = llm.invoke(extraction_prompt)
+            content = response.content if hasattr(response, 'content') else str(response)
+        else:
+            import ollama
+            resp = ollama.chat(model=model, messages=[{"role": "user", "content": extraction_prompt}], format="json")
+            content = resp["message"]["content"]
+
+        # Robust JSON cleaning
+        content = content.strip()
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+            
+        result = json.loads(content)
+        logger.info(f"Extracted {len(result)} fields from {document_type} with high accuracy model")
         return result
     except Exception as e:
         logger.error(f"LLM extraction failed for {document_type}: {e}")
@@ -300,29 +311,30 @@ Return JSON with ALL relevant fields you can identify including:
 
 def generate_document_summary(text: str, document_type: str, model: str = "llama3") -> str:
     """
-    Generate a concise summary of the document for the credit analysis context.
-
-    Returns:
-        A 3-5 sentence summary string.
+    Generate a concise summary of the document using the best available model.
     """
-    ollama = get_ollama_client()
-    snippet = text[:4000]
+    llm = _get_llm()
+    snippet = text[:6000]
 
-    prompt = f"""Summarize this {document_type} document in 3-5 sentences for a 
-credit analyst. Focus on financial risks, key metrics, and anything unusual.
+    prompt = f"""You are a senior credit analyst. Review this {document_type} and provide a concise (3-5 sentences) summary.
+FOCUS ON: Financial risks, inconsistencies, key performance indicators (KPIs), and any regulatory red flags.
 
-Document:
-\"\"\"{snippet}\"\"\"
+DOCUMENT:
+\"\"\"
+{snippet}
+\"\"\"
 
-Return plain text summary (not JSON).
+Return ONLY the summary as plain text. Do not include introductory remarks.
 """
 
     try:
-        response = ollama.chat(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response["message"]["content"].strip()
+        if llm:
+            response = llm.invoke(prompt)
+            return response.content if hasattr(response, 'content') else str(response)
+        else:
+            import ollama
+            resp = ollama.chat(model=model, messages=[{"role": "user", "content": prompt}])
+            return resp["message"]["content"].strip()
     except Exception as e:
         logger.error(f"Summary generation failed: {e}")
-        return f"Summary unavailable. Document type: {document_type}."
+        return f"Summary unavailable for {document_type}. Please review raw extracted data."

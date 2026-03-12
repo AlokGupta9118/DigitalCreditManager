@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, PlusCircle, Upload, TableProperties, Search,
-  Globe, ClipboardCheck, Gauge, ThumbsUp, FileText, Clock, CreditCard,
+  Globe, ClipboardCheck, Gauge, ThumbsUp, FileText, Clock, CreditCard, Shield
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -20,7 +20,6 @@ const navGroups = [
   {
     label: "Data",
     items: [
-      { title: "Document Upload", url: "/documents", icon: Upload },
       { title: "Extraction Results", url: "/extraction", icon: TableProperties },
       { title: "Document Search", url: "/search", icon: Search },
     ],
@@ -30,7 +29,7 @@ const navGroups = [
     items: [
       { title: "Research Agent", url: "/research", icon: Globe },
       { title: "Due Diligence", url: "/due-diligence", icon: ClipboardCheck },
-      { title: "Risk Scoring", url: "/risk-scoring", icon: Gauge },
+      { title: "Credit Appraisal", url: "/risk-scoring", icon: Gauge },
     ],
   },
   {
@@ -55,13 +54,16 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarContent>
-        <div className="p-4 flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0">
-            <CreditCard className="h-4 w-4 text-primary-foreground" />
+      <SidebarContent className="bg-white/50 backdrop-blur-sm">
+        <div className="p-6 flex items-center gap-4 group cursor-pointer">
+          <div className="h-10 w-10 rounded-2xl bg-slate-900 flex items-center justify-center flex-shrink-0 shadow-2xl ring-4 ring-slate-100 transition-all duration-500 group-hover:scale-110 group-hover:bg-primary">
+            <Shield className="h-6 w-6 text-white" />
           </div>
           {!collapsed && (
-            <span className="font-bold text-lg gradient-text whitespace-nowrap">CreditAI</span>
+            <div className="flex flex-col">
+              <span className="font-semibold text-lg text-slate-900 tracking-tight leading-none">CreditAI</span>
+              <span className="text-[10px] text-slate-400 font-medium mt-1">v1.0</span>
+            </div>
           )}
         </div>
 

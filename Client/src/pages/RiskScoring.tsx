@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Card,
   CardContent,
@@ -342,27 +343,55 @@ export function RiskScoring({
   };
 
   return (
-    <div className="space-y-4">
+    <motion.div 
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="space-y-8 animate-in"
+    >
       {/* Company and Case Selection */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Building2 className="h-5 w-5" />
-            Select Credit Case
-          </CardTitle>
-          <CardDescription>
-            Choose a company and case to run risk assessment
-          </CardDescription>
+      <Card className="card-premium">
+        <CardHeader className="p-6 border-b bg-slate-50/50">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="text-xl font-semibold text-slate-900 flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-primary" />
+                Credit Appraisal
+              </CardTitle>
+              <CardDescription className="text-sm text-slate-500">
+                Validate the borrower profile and run automated credit scoring.
+              </CardDescription>
+            </div>
+            
+            {selectedCaseId && researchStatus.exists && (
+              <Button 
+                onClick={handleRunRiskAssessment} 
+                disabled={processing || riskScore?.status === "PROCESSING"}
+                className="btn-primary h-10 px-6 text-sm font-medium"
+              >
+                {processing ? (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    Analyzing Risk...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Finalize Appraisal
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium mb-1 block">Company</label>
+              <label className="text-xs font-medium text-slate-500 mb-2 block">Company</label>
               <Select
                 value={selectedCompanyId}
                 onValueChange={setSelectedCompanyId}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-11 border-slate-200">
                   <SelectValue placeholder="Select a company" />
                 </SelectTrigger>
                 <SelectContent>
@@ -375,18 +404,23 @@ export function RiskScoring({
               </Select>
             </div>
 
-            {selectedCaseId && (
-              <div className="flex flex-col justify-end">
-                <div className="p-2 border rounded-md bg-muted/30">
-                  <div className="text-[10px] uppercase text-muted-foreground font-semibold">Selected Case</div>
-                  <div className="text-sm font-medium truncate">
-                    {cases.find(c => c._id === selectedCaseId)?.borrowerName || "Unnamed Case"}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">
-                    ID: {selectedCaseId.slice(-8)} • {cases.find(c => c._id === selectedCaseId)?.loanPurpose || "General"}
+            {selectedCaseId ? (
+              <div className="flex flex-col">
+                <label className="text-xs font-medium text-slate-500 mb-2 block">Active case</label>
+                <div className="p-3 border rounded-lg bg-emerald-50 border-emerald-200/60 h-11 flex items-center gap-3">
+                  <FileText className="h-4 w-4 text-emerald-600" />
+                  <div className="text-sm font-medium text-slate-700 truncate">
+                    Case ID: {selectedCaseId.slice(-8).toUpperCase()}
                   </div>
                 </div>
               </div>
+            ) : (
+                <div className="flex flex-col">
+                  <label className="text-xs font-medium text-slate-500 mb-2 block">Active case</label>
+                  <div className="p-3 border border-dashed rounded-lg bg-slate-50/50 h-11 flex items-center justify-center">
+                    <span className="text-xs text-slate-400">No case selected</span>
+                  </div>
+                </div>
             )}
           </div>
 
@@ -435,7 +469,7 @@ export function RiskScoring({
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <CardTitle className="text-lg">Credit Risk Assessment</CardTitle>
+                <CardTitle className="text-lg font-semibold">Credit Appraisal Report</CardTitle>
                 {riskScore && getStatusBadge(riskScore.status)}
               </div>
               {riskScore && riskScore.status === "COMPLETED" && (
@@ -573,7 +607,7 @@ export function RiskScoring({
           </CardContent>
         </Card>
       )}
-    </div>
+    </motion.div>
   );
 }
 

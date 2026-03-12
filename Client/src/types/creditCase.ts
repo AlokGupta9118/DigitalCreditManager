@@ -12,6 +12,9 @@ export interface CreditCase {
   caseType?: string;
   camStatus?: string;
   promoterNames?: string[];
+  tenureMonths?: number;
+  address?: string;
+  email?: string;
   createdAt: string;
   updatedAt: string;
 }

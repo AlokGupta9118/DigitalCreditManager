@@ -3,6 +3,7 @@ import { CheckCircle, Loader2, Clock, XCircle } from "lucide-react";
 import { caseService } from "@/services/caseService";
 import { riskService } from "@/services/riskService";
 import { recommendationService } from "@/services/recommendationService";
+import { dueDiligenceService } from "@/services/dueDiligenceService";
 
 interface WorkflowStep {
     label: string;
@@ -24,8 +25,9 @@ const StepIcon = ({ status }: { status: WorkflowStep["status"] }) => {
 
 export function WorkflowProgress({ caseId, compact = false }: WorkflowProgressProps) {
     const [steps, setSteps] = useState<WorkflowStep[]>([
-        { label: "Documents", subLabel: "Upload", status: "pending" },
+        { label: "Documents", subLabel: "Repository", status: "pending" },
         { label: "Research", subLabel: "AI Analysis", status: "pending" },
+        { label: "Due Diligence", subLabel: "Site Visit", status: "pending" },
         { label: "Risk", subLabel: "Scorecard", status: "pending" },
         { label: "Recommendation", subLabel: "Decision", status: "pending" },
         { label: "CAM", subLabel: "Final Memo", status: "pending" },
@@ -42,95 +44,115 @@ export function WorkflowProgress({ caseId, compact = false }: WorkflowProgressPr
         try {
             setLoading(true);
             const newSteps: WorkflowStep[] = [
-                { label: "Documents", subLabel: "Upload", status: "pending" },
+                { label: "Documents", subLabel: "Repository", status: "pending" },
                 { label: "Research", subLabel: "AI Analysis", status: "pending" },
+                { label: "Due Diligence", subLabel: "Site Visit", status: "pending" },
                 { label: "Risk", subLabel: "Scorecard", status: "pending" },
                 { label: "Recommendation", subLabel: "Decision", status: "pending" },
                 { label: "CAM", subLabel: "Final Memo", status: "pending" },
             ];
 
-            // Step 1: Documents
+            // 1. Documents
             try {
                 const docs = await import("@/services/documentService").then(m => m.documentService.getDocumentsByCase(caseId));
                 if (docs && docs.length > 0) {
                     newSteps[0].status = "done";
-                    newSteps[0].subLabel = `${docs.length} doc(s)`;
+                    newSteps[0].subLabel = `${docs.length} Doc(s)`;
                 } else {
                     newSteps[0].status = "active";
+                    newSteps[0].subLabel = "Awaiting Upload";
                 }
             } catch {
                 newSteps[0].status = "active";
+                newSteps[0].subLabel = "Check Docs";
             }
 
-            // Step 2: Research
+            // 2. Research
             try {
                 const research = await caseService.getResearchStatus(caseId);
                 if (research.exists && research.status === "COMPLETED") {
                     newSteps[1].status = "done";
-                } else if (research.exists) {
+                    newSteps[1].subLabel = "Completed";
+                } else if (research.exists && research.status === "PROCESSING") {
                     newSteps[1].status = "active";
+                    newSteps[1].subLabel = "AI Running...";
+                } else if (newSteps[0].status === "done") {
+                    newSteps[1].status = "pending";
+                    newSteps[1].subLabel = "Ready to start";
+                } else {
+                    newSteps[1].status = "pending";
+                    newSteps[1].subLabel = "Needs Documents";
                 }
-            } catch {
-                // pending
-            }
+            } catch { }
 
-            if (newSteps[1].status !== "done") {
-                setSteps([...newSteps]);
-                setLoading(false);
-                return;
-            }
+            // 3. Due Diligence
+            try {
+                const dd = await dueDiligenceService.getDueDiligenceByCase(caseId);
+                if (dd) {
+                    newSteps[2].status = "done";
+                    newSteps[2].subLabel = `${dd.managementCredibility}`;
+                } else if (newSteps[1].status === "done") {
+                    newSteps[2].status = "active";
+                    newSteps[2].subLabel = "Awaiting Visit";
+                } else {
+                    newSteps[2].status = "pending";
+                    newSteps[2].subLabel = "Needs Research";
+                }
+            } catch { }
 
-            // Step 3: Risk
+            // 4. Risk
             try {
                 const risk = await riskService.getLatestRiskByCase(caseId);
-                if (risk.status === "COMPLETED") {
-                    newSteps[2].status = "done";
-                    newSteps[2].subLabel = `Score: ${risk.overallScore?.toFixed(0) ?? "?"}`;
-                } else if (risk.status === "PROCESSING") {
-                    newSteps[2].status = "active";
-                } else if (risk.status === "ERROR") {
-                    newSteps[2].status = "error";
+                if (risk && risk.status === "COMPLETED") {
+                    newSteps[3].status = "done";
+                    newSteps[3].subLabel = `Score: ${risk.overallScore?.toFixed(0) ?? "?"}`;
+                } else if (risk && risk.status === "PROCESSING") {
+                    newSteps[3].status = "active";
+                    newSteps[3].subLabel = "Analyzing...";
+                } else if (risk && risk.status === "ERROR") {
+                    newSteps[3].status = "error";
+                    newSteps[3].subLabel = "System Error";
+                } else if (newSteps[2].status === "done" && newSteps[1].status === "done") {
+                    newSteps[3].status = "pending";
+                    newSteps[3].subLabel = "Ready to score";
+                } else {
+                    newSteps[3].status = "pending";
+                    newSteps[3].subLabel = "Prerequisites";
                 }
-            } catch {
-                // pending
-            }
+            } catch { }
 
-            if (newSteps[2].status !== "done") {
-                setSteps([...newSteps]);
-                setLoading(false);
-                return;
-            }
-
-            // Step 4: Recommendation
+            // 5. Recommendation
             try {
                 const finStatus = await recommendationService.getFinalizeStatus(caseId);
                 if (finStatus.finalized) {
-                    newSteps[3].status = "done";
-                    newSteps[3].subLabel = finStatus.finalStatus || "Finalized";
-                } else if (finStatus.hasRecommendation) {
-                    newSteps[3].status = "active";
-                    newSteps[3].subLabel = "Awaiting Officer";
-                }
-            } catch {
-                // pending
-            }
-
-            if (newSteps[3].status !== "done") {
-                setSteps([...newSteps]);
-                setLoading(false);
-                return;
-            }
-
-            // Step 5: CAM
-            try {
-                const camReports = await import("@/services/caseService").then(m => m.caseService.getCAMReports(caseId));
-                if (camReports && camReports.length > 0) {
                     newSteps[4].status = "done";
-                    newSteps[4].subLabel = `${camReports.length} report(s)`;
+                    newSteps[4].subLabel = finStatus.finalStatus || "Finalized";
+                } else if (finStatus.hasRecommendation) {
+                    newSteps[4].status = "active";
+                    newSteps[4].subLabel = "Reviewing...";
+                } else if (newSteps[3].status === "done") {
+                    newSteps[4].status = "pending";
+                    newSteps[4].subLabel = "Awaiting Rec";
+                } else {
+                    newSteps[4].status = "pending";
+                    newSteps[4].subLabel = "Needs Score";
                 }
-            } catch {
-                // pending
-            }
+            } catch { }
+
+            // 6. CAM
+            try {
+                const camReports = await caseService.getCAMReports(caseId);
+                if (camReports && camReports.length > 0) {
+                    newSteps[5].status = "done";
+                    newSteps[5].subLabel = `${camReports.length} Memo(s)`;
+                } else if (newSteps[4].status === "done") {
+                    newSteps[5].status = "active";
+                    newSteps[5].subLabel = "Drafting...";
+                } else {
+                    newSteps[5].status = "pending";
+                    newSteps[5].subLabel = "Needs Decision";
+                }
+            } catch { }
 
             setSteps(newSteps);
         } catch (err) {
@@ -139,15 +161,6 @@ export function WorkflowProgress({ caseId, compact = false }: WorkflowProgressPr
             setLoading(false);
         }
     };
-
-    if (loading) {
-        return (
-            <div className="flex items-center gap-2 text-muted-foreground text-xs">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Loading pipeline status...
-            </div>
-        );
-    }
 
     const completedCount = steps.filter(s => s.status === "done").length;
     const pct = Math.round((completedCount / steps.length) * 100);
@@ -160,9 +173,8 @@ export function WorkflowProgress({ caseId, compact = false }: WorkflowProgressPr
                         key={i}
                         title={`${step.label}: ${step.status}`}
                         className={`h-2 flex-1 rounded-full transition-colors ${step.status === "done" ? "bg-green-500" :
-                                step.status === "active" ? "bg-blue-400 animate-pulse" :
-                                    step.status === "error" ? "bg-red-400" :
-                                        "bg-gray-200"
+                            step.status === "active" ? "bg-blue-400 animate-pulse" :
+                                step.status === "error" ? "bg-red-400" : "bg-slate-200"
                             }`}
                     />
                 ))}
@@ -171,48 +183,38 @@ export function WorkflowProgress({ caseId, compact = false }: WorkflowProgressPr
     }
 
     return (
-        <div className="space-y-3">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Workflow Progress</span>
-                <span>{completedCount}/{steps.length} steps complete ({pct}%)</span>
+        <div className="space-y-4 p-4 rounded-2xl bg-white/50 backdrop-blur-md border border-white/20 shadow-sm">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Credit Pipeline Velocity</h3>
+                    <p className="text-[10px] text-slate-500">Automated workflow tracking</p>
+                </div>
+                <div className="text-right">
+                    <span className="text-lg font-bold text-indigo-600 font-mono">{pct}%</span>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-tighter">{completedCount}/{steps.length} steps</p>
+                </div>
             </div>
 
-            {/* Progress bar */}
-            <div className="w-full bg-gray-100 rounded-full h-1.5">
+            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                 <div
-                    className="h-1.5 rounded-full bg-green-500 transition-all duration-500"
+                    className="h-full bg-gradient-to-r from-indigo-500 via-blue-500 to-emerald-500 transition-all duration-1000 ease-out"
                     style={{ width: `${pct}%` }}
                 />
             </div>
 
-            {/* Steps */}
-            <div className="flex items-start gap-0">
+            <div className="grid grid-cols-6 gap-2">
                 {steps.map((step, i) => (
-                    <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                        {/* Connector line + icon */}
-                        <div className="flex items-center w-full">
-                            {i > 0 && (
-                                <div className={`flex-1 h-0.5 ${steps[i - 1].status === "done" ? "bg-green-500" : "bg-gray-200"}`} />
-                            )}
-                            <div className={`rounded-full p-1 flex-shrink-0 ${step.status === "done" ? "bg-green-50" :
-                                    step.status === "active" ? "bg-blue-50" :
-                                        step.status === "error" ? "bg-red-50" :
-                                            "bg-gray-50"
-                                }`}>
-                                <StepIcon status={step.status} />
-                            </div>
-                            {i < steps.length - 1 && (
-                                <div className={`flex-1 h-0.5 ${step.status === "done" ? "bg-green-500" : "bg-gray-200"}`} />
-                            )}
+                    <div key={i} className="flex flex-col items-center gap-1 group">
+                        <div className={`p-1.5 rounded-xl transition-all duration-300 ${step.status === "done" ? "bg-green-50 text-green-600" :
+                            step.status === "active" ? "bg-blue-50 text-blue-600 shadow-[0_0_15px_rgba(59,130,246,0.3)]" :
+                                step.status === "error" ? "bg-red-50 text-red-600" : "bg-slate-50 text-slate-300"
+                            }`}>
+                            <StepIcon status={step.status} />
                         </div>
-                        {/* Label */}
-                        <div className="text-center">
-                            <p className={`text-[10px] font-medium ${step.status === "done" ? "text-green-700" :
-                                    step.status === "active" ? "text-blue-700" :
-                                        step.status === "error" ? "text-red-700" :
-                                            "text-gray-400"
+                        <div className="text-center overflow-hidden w-full">
+                            <p className={`text-[9px] font-bold truncate uppercase tracking-tighter ${step.status === "done" || step.status === "active" ? "text-slate-900" : "text-slate-400"
                                 }`}>{step.label}</p>
-                            <p className="text-[9px] text-gray-400">{step.subLabel}</p>
+                            <p className="text-[8px] text-slate-400 truncate font-mono">{step.subLabel}</p>
                         </div>
                     </div>
                 ))}

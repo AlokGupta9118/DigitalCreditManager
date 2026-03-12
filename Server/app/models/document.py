@@ -15,6 +15,7 @@ class Document(BaseModel):
 
 class DocumentResponse(Document):
     id: str = Field(alias="_id")
+    companyName: Optional[str] = None
     
     class Config:
         populate_by_name = True

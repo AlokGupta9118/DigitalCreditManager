@@ -7,9 +7,10 @@ from datetime import datetime
 from typing import List
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from ai_pipeline.agents.document_parser import DocumentParserAgent
-from app.database import financial_data_collection, documents_collection, activity_log_collection
+from app.database import financial_data_collection, documents_collection, activity_log_collection, companies_collection, credit_cases_collection
 from app.models.document import Document, DocumentResponse
 from app.models.activity_log import create_activity_log
+from app.workflow_manager import WorkflowOrchestrator
 import asyncio
 import logging
 
@@ -68,6 +69,9 @@ async def process_document_extraction(document_id: str, file_path: str, creditCa
                 }}
             )
             logger.info(f"Document {document_id} extracted successfully with {len(financial_data)} fields")
+            
+            # Trigger next workflow steps
+            await WorkflowOrchestrator.trigger_next_steps(creditCaseId, "DOCUMENTS")
         else:
             # No data extracted but no error
             documents_collection.update_one(
@@ -100,7 +104,7 @@ async def upload_document(
     financialYear: str = Form(...)
 ):
     try:
-        allowed_extensions = ['.pdf', '.xlsx', '.xls', '.csv', '.json']
+        allowed_extensions = ['.pdf', '.xlsx', '.xls', '.csv', '.json', '.png', '.jpg', '.jpeg']
         file_ext = os.path.splitext(file.filename)[1].lower()
 
         if file_ext not in allowed_extensions:
@@ -188,6 +192,67 @@ async def get_documents_by_case(creditCaseId: str):
         return documents
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching documents: {str(e)}")
+
+@router.get("/search", response_model=List[DocumentResponse])
+async def search_documents(query: str = ""):
+    """Search for documents across all cases and companies with improved matching"""
+    try:
+        if not query or len(query) < 2:
+            return []
+            
+        # 1. Broad Document Search (Name, Type, Year)
+        search_filter = {
+            "$or": [
+                {"fileName": {"$regex": query, "$options": "i"}},
+                {"documentType": {"$regex": query, "$options": "i"}},
+                {"financialYear": {"$regex": query, "$options": "i"}}
+            ]
+        }
+        
+        # 2. Find companies matching the query
+        matching_companies = list(companies_collection.find(
+            {"companyName": {"$regex": query, "$options": "i"}}
+        ))
+        
+        company_ids = [str(c["_id"]) for c in matching_companies]
+        
+        # 3. Find cases matching companies OR matching the query directly (borrower name)
+        case_search = {"$or": []}
+        if company_ids:
+            case_search["$or"].append({"companyId": {"$in": company_ids}})
+        
+        case_search["$or"].append({"borrowerName": {"$regex": query, "$options": "i"}})
+        case_search["$or"].append({"loanPurpose": {"$regex": query, "$options": "i"}})
+        
+        matching_cases = list(credit_cases_collection.find(case_search))
+        case_ids = [str(c["_id"]) for c in matching_cases]
+        
+        # Add these case IDs to our document search
+        if case_ids:
+            search_filter["$or"].append({"creditCaseId": {"$in": case_ids}})
+
+        # Execute Search
+        documents = list(documents_collection.find(search_filter).sort("uploadDate", -1).limit(40))
+        
+        # 4. Final enrichment with Company Names for the UI
+        results = []
+        for doc in documents:
+            doc["_id"] = str(doc["_id"])
+            
+            # Fetch company name
+            case = credit_cases_collection.find_one({"_id": ObjectId(doc["creditCaseId"])})
+            if case:
+                company = companies_collection.find_one({"_id": ObjectId(case["companyId"])})
+                doc["companyName"] = company["companyName"] if company else case.get("borrowerName", "Unknown")
+            else:
+                doc["companyName"] = "Unknown"
+                
+            results.append(doc)
+            
+        return results
+    except Exception as e:
+        logger.error(f"Enhanced Search error: {e}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 # ... rest of your endpoints remain the same ...
 @router.get("/{document_id}", response_model=DocumentResponse)
